@@ -1,13 +1,19 @@
-//match from database authentication
+// hashing + salting password
 
 require("dotenv").config();
 const express = require("express");
-const mongoose = require("mongoose");
 const cors = require("cors");
+const mongoose = require("mongoose");
+
+const bcrypt = require("bcrypt");
+const saltRounds = 10;
+
+const User = require("./models/userModel");
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 const dbURL = process.env.MONGO_URL;
-const User = require("./models/userModel");
+
 mongoose
   .connect(dbURL)
   .then(() => {
@@ -15,11 +21,12 @@ mongoose
   })
   .catch((error) => {
     console.log(error);
+    process.exit(1);
   });
 
 app.use(cors());
-app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/./views/index.html");
@@ -27,9 +34,14 @@ app.get("/", (req, res) => {
 
 app.post("/register", async (req, res) => {
   try {
-    const newUser = new User(req.body);
-    await newUser.save();
-    res.status(201).json(newUser);
+    bcrypt.hash(req.body.password, saltRounds, async function (err, hash) {
+      const newUser = new User({
+        email: req.body.email,
+        password: hash,
+      });
+      await newUser.save();
+      res.status(201).json(newUser);
+    });
   } catch (error) {
     res.status(500).json(error.message);
   }
@@ -37,19 +49,25 @@ app.post("/register", async (req, res) => {
 
 app.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = req.body.email;
+    const password = req.body.password;
     const user = await User.findOne({ email: email });
-    if (user && user.password === password) {
-      res.status(200).json({ status: " valid user" });
+    if (user) {
+      bcrypt.compare(password, user.password, async function (err, result) {
+        if (result === true) {
+          res.status(200).json({ status: "valid user" });
+        }
+        console.log(user);
+      });
     } else {
-      res.status(404).json({ status: "not valid user" });
+      res.status(404).json({ status: "Not valid user" });
     }
   } catch (error) {
     res.status(500).json(error.message);
   }
 });
 
-//route not found
+// route not found error
 app.use((req, res, next) => {
   res.status(404).json({
     message: "route not found",
@@ -64,5 +82,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`app running in the port http://localhost:${PORT}`);
+  console.log(`server is running at http://localhost:${PORT}`);
 });
